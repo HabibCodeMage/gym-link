@@ -765,7 +765,7 @@ export default function GymLinkPlatform() {
 
 function VenueCard({ venue }: { venue: FitnessVenue }) {
   return (
-    <Card className="overflow-hidden hover:shadow-lg transition-shadow duration-300 group">
+    <Card className="overflow-hidden hover:shadow-lg transition-shadow duration-300 group pt-0">
       <div className="relative overflow-hidden">
         <img
           src={venue.image || "/placeholder.svg"}
