@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { fitnessVenues, type FitnessVenue } from "@/lib/fitness-data"
+import { type FitnessVenue } from "@/lib/fitness-data"
+import api from "@/api"
 
 interface AISearchProps {
-  onSearchResults: (venues: FitnessVenue[], query: string) => void
+  onSearchResults: (venues: FitnessVenue[], query: string, hasMore?: boolean, nextCursor?: string, explanation?: string) => void
 }
 
 export function AISearch({ onSearchResults }: AISearchProps) {
@@ -100,36 +101,25 @@ export function AISearch({ onSearchResults }: AISearchProps) {
     setIsLoading(true)
     setLastQuery(query)
 
-    // Simulate AI processing delay
-    await new Promise((resolve) => setTimeout(resolve, 1500))
+    try {
+      // Simulate AI processing delay
+      await new Promise((resolve) => setTimeout(resolve, 1500))
 
-    const parsedQuery = parseNaturalLanguageQuery(query)
-
-    const filteredVenues = fitnessVenues.filter((venue) => {
-      // Category match
-      const categoryMatch = parsedQuery.categories.length === 0 || parsedQuery.categories.includes(venue.category)
-
-      // City match
-      const cityMatch = parsedQuery.cities.length === 0 || parsedQuery.cities.includes(venue.city)
-
-      // Services match
-      const servicesMatch =
-        parsedQuery.services.length === 0 || parsedQuery.services.every((service) => venue.services.includes(service))
-
-      // Price match
-      const priceMatch =
-        !parsedQuery.priceRange ||
-        (venue.price >= parsedQuery.priceRange.min && venue.price <= parsedQuery.priceRange.max)
-
-      // Vibe match
-      const vibeMatch = !parsedQuery.vibe || venue.vibe === parsedQuery.vibe
-
-      return categoryMatch && cityMatch && servicesMatch && priceMatch && vibeMatch
-    })
-
-    onSearchResults(filteredVenues, query)
-    setIsLoading(false)
-    setQuery("")
+      // Call RAG-based AI search backend
+      const response = await api.aiSearchService.search({
+        query: query,
+        limit: 50, // Get more results for AI search
+      })
+      
+      onSearchResults(response.venues, query, response.hasMore, response.nextCursor, response.explanation)
+    } catch (error) {
+      console.error('AI Search error:', error)
+      // Fallback to empty results on error
+      onSearchResults([], query)
+    } finally {
+      setIsLoading(false)
+      setQuery("")
+    }
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {

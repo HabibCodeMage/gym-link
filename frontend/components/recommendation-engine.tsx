@@ -6,10 +6,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { fitnessVenues, type FitnessVenue } from "@/lib/fitness-data"
+import { type FitnessVenue } from "@/lib/fitness-data"
+import api from "@/api"
 
 interface RecommendationEngineProps {
-  onRecommendation: (venues: FitnessVenue[], preferences: UserPreferences) => void
+  onRecommendation: (venues: FitnessVenue[], preferences: UserPreferences, explanation?: string, algorithm?: string, confidence?: number) => void
 }
 
 interface UserPreferences {
@@ -23,6 +24,7 @@ interface UserPreferences {
 
 export function RecommendationEngine({ onRecommendation }: RecommendationEngineProps) {
   const [currentStep, setCurrentStep] = useState(0)
+  const [isLoading, setIsLoading] = useState(false)
   const [preferences, setPreferences] = useState<UserPreferences>({
     goal: "",
     experience: "",
@@ -97,55 +99,68 @@ export function RecommendationEngine({ onRecommendation }: RecommendationEngineP
     },
   ]
 
-  const generateRecommendations = (prefs: UserPreferences): FitnessVenue[] => {
-    const scoredVenues = fitnessVenues.map((venue) => {
-      let score = 0
+  const mapPreferencesToBackend = (prefs: UserPreferences) => {
+    // Map frontend preferences to backend parameters
+    const preferences: string[] = []
+    let category: string | undefined
+    let city: string | undefined
+    let maxPrice: number | undefined
 
-      // Goal-based scoring
-      if (prefs.goal === "weight-loss" && (venue.category === "Gym" || venue.category === "CrossFit")) score += 3
-      if (prefs.goal === "strength" && venue.category === "Gym") score += 3
-      if (prefs.goal === "flexibility" && (venue.category === "Yoga" || venue.category === "Pilates")) score += 3
-      if (prefs.goal === "wellness" && (venue.category === "Yoga" || venue.vibe === "Calm & Wellness")) score += 3
-      if (prefs.goal === "sport" && (venue.category === "Boxing" || venue.category === "CrossFit")) score += 3
+    // Map goal to categories
+    if (prefs.goal === "weight-loss") preferences.push("Gym", "CrossFit")
+    if (prefs.goal === "strength") preferences.push("Gym")
+    if (prefs.goal === "flexibility") preferences.push("Yoga", "Pilates")
+    if (prefs.goal === "wellness") preferences.push("Yoga", "Pilates")
+    if (prefs.goal === "sport") preferences.push("Boxing", "CrossFit")
 
-      // Budget scoring
-      if (prefs.budget === "budget" && venue.price < 35) score += 2
-      if (prefs.budget === "moderate" && venue.price >= 35 && venue.price <= 45) score += 2
-      if (prefs.budget === "premium" && venue.price > 45) score += 2
+    // Map budget to price range
+    if (prefs.budget === "budget") maxPrice = 35
+    if (prefs.budget === "moderate") maxPrice = 45
+    if (prefs.budget === "premium") maxPrice = 100
 
-      // Location scoring
-      if (prefs.location === "sydney" && venue.city === "Sydney") score += 2
-      if (prefs.location === "melbourne" && venue.city === "Melbourne") score += 2
-      if (prefs.location === "gold-coast" && venue.city === "Gold Coast") score += 2
+    // Map location to city
+    if (prefs.location === "sydney") city = "Sydney"
+    if (prefs.location === "melbourne") city = "Melbourne"
+    if (prefs.location === "gold-coast") city = "Gold Coast"
 
-      // Schedule scoring (24/7 access for flexible schedules)
-      if (prefs.schedule === "flexible" && venue.services.includes("24/7 Access")) score += 1
-
-      // Vibe scoring
-      if (prefs.vibe === "intense" && venue.vibe === "Performance & Intensity") score += 2
-      if (prefs.vibe === "calm" && venue.vibe === "Calm & Wellness") score += 2
-      if (prefs.vibe === "social" && venue.vibe === "Community & Support") score += 2
-      if (prefs.vibe === "tech" && venue.vibe === "Modern & Tech-Forward") score += 2
-      if (prefs.vibe === "flexible" && venue.vibe === "Flexibility & Lifestyle") score += 2
-
-      // Rating bonus
-      score += venue.rating * 0.5
-
-      return { venue, score }
-    })
-
-    return scoredVenues
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 3)
-      .map((item) => item.venue)
+    return { preferences, category, city, maxPrice }
   }
 
-  const handleNext = () => {
+  const generateRecommendations = async (prefs: UserPreferences) => {
+    setIsLoading(true)
+    try {
+      const { preferences, category, city, maxPrice } = mapPreferencesToBackend(prefs)
+      
+      // Call RAG-based recommendation backend
+      const response = await api.recommendationsService.getRecommendations({
+        preferences,
+        category,
+        city,
+        maxPrice,
+        limit: 6
+      })
+      
+      onRecommendation(
+        response.venues, 
+        prefs, 
+        response.explanation, 
+        response.algorithm, 
+        response.confidence
+      )
+    } catch (error) {
+      console.error('Recommendation error:', error)
+      // Fallback to empty results on error
+      onRecommendation([], prefs)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleNext = async () => {
     if (currentStep < questions.length - 1) {
       setCurrentStep(currentStep + 1)
     } else {
-      const recommendations = generateRecommendations(preferences)
-      onRecommendation(recommendations, preferences)
+      await generateRecommendations(preferences)
     }
   }
 
@@ -204,11 +219,11 @@ export function RecommendationEngine({ onRecommendation }: RecommendationEngineP
           <Button variant="outline" onClick={handleBack} disabled={currentStep === 0}>
             Back
           </Button>
-          <Button onClick={handleNext} disabled={!canProceed} className="flex items-center gap-2">
+          <Button onClick={handleNext} disabled={!canProceed || isLoading} className="flex items-center gap-2">
             {isLastStep ? (
               <>
                 <Sparkles className="w-4 h-4" />
-                Get Recommendations
+                {isLoading ? "Generating..." : "Get Recommendations"}
               </>
             ) : (
               <>
